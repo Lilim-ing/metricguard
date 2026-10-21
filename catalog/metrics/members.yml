@@ -1,0 +1,78 @@
+# 会员类指标：口径声明
+# 计算实现见 src/metricguard/catalog/builders.py
+# 新增指标 = 这里加一条 + builders 注册一个函数，缺任一半会在启动时报错
+
+metrics:
+  - name: repurchase_rate_90d
+    label: 90天复购率
+    version: 2
+    owner: member-ops
+    unit: "%"
+    kind: ratio
+    description: 近90天购买≥2次的会员 / 近90天购买≥1次的会员（滚动窗口，避免cohort右删失）
+    numerator: "count(distinct member_id) where orders>=2"
+    denominator: "count(distinct member_id) where orders>=1"
+    dimensions: [register_channel, member_level, city_tier, age_band]
+    pii_columns: []
+
+  - name: active_rate_30d
+    label: 30天活跃率
+    version: 1
+    owner: member-ops
+    unit: "%"
+    kind: ratio
+    description: 期末前30天有购买或行为事件的会员 / 期初已注册会员
+    numerator: "count(distinct member_id with order or behavior in last 30d)"
+    denominator: "count(distinct member_id registered before period start)"
+    expected_aggregates: [avg]
+    dimensions: [member_level, city_tier, age_band]
+    pii_columns: []
+
+  - name: churn_rate_180d
+    label: 180天流失率
+    version: 1
+    owner: member-ops
+    unit: "%"
+    kind: ratio
+    description: 期初有购买、且期末前180天无购买的会员 / 期初有购买的会员
+    numerator: "count(distinct member_id) with last_order >= 180d before end"
+    denominator: "count(distinct member_id) with any paid order before end"
+    expected_aggregates: [avg]
+    dimensions: [member_level, city_tier]
+    pii_columns: []
+
+  - name: new_members
+    label: 新增会员数
+    version: 1
+    owner: member-ops
+    unit: "人"
+    kind: aggregate
+    description: 统计期内首次注册的会员数
+    numerator: "count(distinct member_id)"
+    denominator: null
+    dimensions: [register_channel, city_tier, age_band]
+    pii_columns: []
+
+  - name: repeat_gmv_share
+    label: 复购会员GMV占比
+    version: 1
+    owner: member-ops
+    unit: "%"
+    kind: ratio
+    description: 期内下单≥2次的会员贡献GMV / 期内总GMV
+    numerator: "sum(paid_amount) from members with >=2 paid orders"
+    denominator: "sum(paid_amount)"
+    dimensions: [member_level]
+    pii_columns: []
+
+  - name: orders_per_member
+    label: 人均订单数
+    version: 1
+    owner: member-ops
+    unit: "单/人"
+    kind: ratio
+    description: 期内已支付订单数 / 期内有购买的会员数
+    numerator: "count(*)"
+    denominator: "count(distinct member_id)"
+    dimensions: [member_level, city_tier]
+    pii_columns: []

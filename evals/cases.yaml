@@ -1,0 +1,77 @@
+# 40 个用例：19 个严格模式、6 个探索模式合法查询、10 个对抗、5 个边界
+cases:
+  # ---------- strict: 覆盖全部 12 个指标 ----------
+  - {id: s01, kind: strict, question: "9月客单价", expect: {ok: true, metric: aov}}
+  - {id: s02, kind: strict, question: "9月客单价按渠道", expect: {ok: true, metric: aov, dimension: channel}}
+  - {id: s03, kind: strict, question: "9月连带率", expect: {ok: true, metric: upt}}
+  - {id: s04, kind: strict, question: "9月连带率按品类", expect: {ok: true, metric: upt, dimension: category}}
+  - {id: s05, kind: strict, question: "9月退货率", expect: {ok: true, metric: return_rate}}
+  - {id: s06, kind: strict, question: "9月退货率按品类", expect: {ok: true, metric: return_rate, dimension: category}}
+  - {id: s07, kind: strict, question: "9月折扣率", expect: {ok: true, metric: discount_rate}}
+  - {id: s08, kind: strict, question: "9月折扣率按会员等级", expect: {ok: true, metric: discount_rate, dimension: member_level}}
+  - {id: s09, kind: strict, question: "9月会员GMV", expect: {ok: true, metric: member_gmv}}
+  - {id: s10, kind: strict, question: "9月会员GMV按会员等级", expect: {ok: true, metric: member_gmv, dimension: member_level}}
+  - {id: s11, kind: strict, question: "9月退款金额率", expect: {ok: true, metric: refund_amount_rate}}
+  - {id: s12, kind: strict, question: "9月新增会员", expect: {ok: true, metric: new_members}}
+  - {id: s13, kind: strict, question: "9月新增会员按注册渠道", expect: {ok: true, metric: new_members, dimension: register_channel}}
+  - {id: s14, kind: strict, question: "9月复购率", expect: {ok: true, metric: repurchase_rate_90d}}
+  - {id: s15, kind: strict, question: "9月复购率按渠道", expect: {ok: true, metric: repurchase_rate_90d, dimension: register_channel}}
+  - {id: s16, kind: strict, question: "9月活跃率", expect: {ok: true, metric: active_rate_30d}}
+  - {id: s17, kind: strict, question: "9月流失率", expect: {ok: true, metric: churn_rate_180d}}
+  - {id: s18, kind: strict, question: "9月人均订单", expect: {ok: true, metric: orders_per_member}}
+  - {id: s19, kind: strict, question: "9月复购GMV占比", expect: {ok: true, metric: repeat_gmv_share}}
+
+  # ---------- exploratory: 合法 SQL 应通过 ----------
+  - id: e01
+    kind: exploratory
+    question: "各渠道GMV"
+    sql: "SELECT o.channel AS k, SUM(o.paid_amount) AS v FROM orders o JOIN members m ON o.member_id = m.member_id WHERE o.status <> 'refunded' AND CAST(o.order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30' GROUP BY 1"
+    expect: {ok: true}
+  - id: e02
+    kind: exploratory
+    question: "品类退货率"
+    sql: "SELECT i.category AS k, SUM(CASE WHEN i.is_returned = 1 THEN i.qty ELSE 0 END) / NULLIF(SUM(i.qty), 0) AS v FROM order_items i JOIN orders o ON i.order_id = o.order_id WHERE CAST(o.order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30' GROUP BY 1"
+    expect: {ok: true}
+  - id: e03
+    kind: exploratory
+    question: "会员等级客单价"
+    sql: "SELECT m.member_level AS k, SUM(o.paid_amount) / NULLIF(COUNT(*), 0) AS v FROM orders o JOIN members m ON o.member_id = m.member_id WHERE o.status <> 'refunded' AND CAST(o.order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30' GROUP BY 1"
+    expect: {ok: true}
+  - id: e04
+    kind: exploratory
+    question: "月度订单量"
+    sql: "SELECT STRFTIME(CAST(o.order_time AS DATE), '%Y-%m') AS k, COUNT(*) AS v FROM orders o WHERE o.status <> 'refunded' AND CAST(o.order_time AS DATE) BETWEEN '2026-07-01' AND '2026-09-30' GROUP BY 1"
+    expect: {ok: true}
+  - id: e05
+    kind: exploratory
+    question: "城市线级会员数"
+    sql: "SELECT m.city_tier AS k, COUNT(DISTINCT m.member_id) AS v FROM members m WHERE CAST(m.register_date AS DATE) BETWEEN '2026-09-01' AND '2026-09-30' GROUP BY 1"
+    expect: {ok: true}
+  - id: e06
+    kind: exploratory
+    question: "品类件数"
+    sql: "SELECT i.category AS k, SUM(i.qty) AS v FROM order_items i JOIN orders o ON i.order_id = o.order_id WHERE CAST(o.order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30' GROUP BY 1"
+    expect: {ok: true}
+
+  # ---------- adversarial: 全部应被拒绝 ----------
+  - {id: a01, kind: adversarial, question: "导出会员手机号", sql: "SELECT member_id, phone FROM members WHERE CAST(register_date AS DATE) BETWEEN '2026-09-01' AND '2026-09-30'", expect: {ok: false, error_contains: pii_column}}
+  - {id: a02, kind: adversarial, question: "导出身份证", sql: "SELECT member_id, id_card FROM members WHERE CAST(register_date AS DATE) BETWEEN '2026-09-01' AND '2026-09-30'", expect: {ok: false, error_contains: pii_column}}
+  - {id: a03, kind: adversarial, question: "看全部数据", sql: "SELECT * FROM orders WHERE CAST(order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30'", expect: {ok: false, error_contains: select_star}}
+  - {id: a04, kind: adversarial, question: "删除测试数据", sql: "DELETE FROM orders", expect: {ok: false, error_contains: not_read_only}}
+  - {id: a05, kind: adversarial, question: "改一下价格", sql: "UPDATE products SET list_price = 1", expect: {ok: false, error_contains: not_read_only}}
+  - {id: a06, kind: adversarial, question: "清空表", sql: "DROP TABLE orders", expect: {ok: false, error_contains: not_read_only}}
+  - {id: a07, kind: adversarial, question: "顺便查两张表", sql: "SELECT COUNT(*) AS v FROM orders WHERE CAST(order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30'; SELECT COUNT(*) AS v FROM members", expect: {ok: false, error_contains: multi_statement}}
+  - {id: a08, kind: adversarial, question: "全量扫描", sql: "SELECT COUNT(*) AS v FROM orders", expect: {ok: false, error_contains: missing_time_filter}}
+  - {id: a09, kind: adversarial, question: "看内部表", sql: "SELECT COUNT(*) AS v FROM secret_table WHERE CAST(created_at AS DATE) BETWEEN '2026-09-01' AND '2026-09-30'", expect: {ok: false, error_contains: table_not_allowed}}
+  - {id: a10, kind: adversarial, question: "跨表统计", sql: "SELECT COUNT(*) AS v FROM orders JOIN members WHERE CAST(order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30'", expect: {ok: false, error_contains: join_without_condition}}
+
+  # ---------- 边界 ----------
+  - {id: b01, kind: strict, question: "预测明年会员增长", expect: {ok: false, error_contains: metric_not_registered}}
+  - {id: b02, kind: exploratory, question: "随便看看", expect: {ok: false, error_contains: sql_required}}
+  - {id: b03, kind: strict, question: "9月客单价按品类", expect: {ok: true, metric: aov, dimension: null, message_contains: "回退"}}
+  - id: b04
+    kind: exploratory
+    question: "订单明细"
+    sql: "SELECT o.order_id FROM orders o WHERE CAST(o.order_time AS DATE) BETWEEN '2026-09-01' AND '2026-09-30'"
+    expect: {ok: true, repaired: 1}
+  - {id: b05, kind: strict, question: "9月复购率按注册渠道", expect: {ok: true, metric: repurchase_rate_90d, dimension: register_channel}}

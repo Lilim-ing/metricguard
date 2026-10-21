@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>metricguard · 可信问数网关</title>
+<style>
+  :root { --bg:#f7f8fa; --card:#fff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --accent:#0f766e; --bad:#b91c1c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1060px; margin:0 auto; padding:34px 20px 80px; }
+  h1 { font-size:23px; margin:0 0 4px; }
+  .lead { color:var(--muted); font-size:13.5px; margin-bottom:22px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:16px; }
+  .row { display:flex; gap:9px; flex-wrap:wrap; }
+  input[type=text] { flex:1 1 380px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  select, button { padding:10px 13px; border-radius:8px; border:1px solid var(--line); font-size:13.5px; background:#fff; }
+  button { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--ink); border-color:var(--line); font-weight:500; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .meta { display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; color:var(--muted); margin-top:10px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px; font-weight:600; }
+  .ok { background:#dcfce7; color:#166534; } .no { background:#fee2e2; color:#991b1b; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid #f1f5f9; }
+  th { color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; overflow:auto; font-size:12px; line-height:1.6; }
+  h2 { font-size:12.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 10px; }
+  .hidden { display:none; }
+  .err { color:var(--bad); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>metricguard</h1>
+  <div class="lead">先定口径，再谈智能：语义层 → SQL 编译 → AST 审查 → 口径核对 → 脱敏 → 审计。</div>
+
+  <div class="panel">
+    <div class="row">
+      <input id="q" type="text" value="9月复购率按渠道">
+      <select id="mode"><option value="strict">strict</option><option value="exploratory">exploratory</option></select>
+      <button id="go">提问</button>
+      <button class="ghost" id="cat">看指标目录</button>
+    </div>
+    <div class="row" style="margin-top:9px">
+      <input id="sql" type="text" placeholder="exploratory 模式下粘贴 SQL（会经过 AST 审查）" style="flex:1 1 100%">
+    </div>
+    <div class="meta" id="meta"></div>
+  </div>
+
+  <div class="panel hidden" id="out">
+    <h2>结果</h2>
+    <div id="table"></div>
+    <h2 style="margin-top:16px">审计记录</h2>
+    <pre id="sqlbox"></pre>
+  </div>
+
+  <div class="panel hidden" id="catbox">
+    <h2>已注册指标</h2>
+    <div id="cattable"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function renderTable(rows) {
+  if (!rows || !rows.length) { $("table").innerHTML = "<div class='err'>无返回行</div>"; return; }
+  const cols = Object.keys(rows[0]);
+  const t = document.createElement("table");
+  const head = document.createElement("tr");
+  cols.forEach((c) => { const th = document.createElement("th"); th.textContent = c; head.appendChild(th); });
+  t.appendChild(head);
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    cols.forEach((c) => {
+      const td = document.createElement("td");
+      const v = r[c];
+      td.textContent = typeof v === "number" ? v.toFixed(4) : String(v);
+      tr.appendChild(td);
+    });
+    t.appendChild(tr);
+  });
+  $("table").innerHTML = "";
+  $("table").appendChild(t);
+}
+
+$("go").onclick = async () => {
+  $("go").disabled = true;
+  $("meta").textContent = "运行中…";
+  try {
+    const resp = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: $("q").value,
+        mode: $("mode").value,
+        sql: $("sql").value || null,
+      }),
+    });
+    const r = await resp.json();
+    $("out").classList.remove("hidden");
+    const badge = document.createElement("span");
+    badge.className = "badge " + (r.ok ? "ok" : "no");
+    badge.textContent = r.ok ? "通过" : "拒绝";
+    $("meta").innerHTML = "";
+    $("meta").appendChild(badge);
+    ["metric", "dimension", "error_code", "latency_ms", "ast_verdict"].forEach((k) => {
+      if (r[k] !== null && r[k] !== undefined && r[k] !== "") {
+        const s = document.createElement("span");
+        s.textContent = `${k}: ${r[k]}`;
+        $("meta").appendChild(s);
+      }
+    });
+    if (r.ok) {
+      renderTable(r.rows);
+    } else {
+      $("table").innerHTML = `<div class="err">${r.message || ""}<br/>${r.hint || ""}</div>`;
+    }
+    $("sqlbox").textContent = (r.sql || "(无 SQL)") + "\n\n" + JSON.stringify(
+      { masked_columns: r.masked_columns, repaired: r.repaired, value: r.value }, null, 2);
+  } catch (e) {
+    $("meta").textContent = "请求失败：" + e;
+  } finally {
+    $("go").disabled = false;
+  }
+};
+
+$("cat").onclick = async () => {
+  const resp = await fetch("/api/catalog");
+  const items = await resp.json();
+  $("catbox").classList.remove("hidden");
+  const t = document.createElement("table");
+  const head = document.createElement("tr");
+  ["name", "label", "unit", "version", "dimensions"].forEach((c) => {
+    const th = document.createElement("th"); th.textContent = c; head.appendChild(th);
+  });
+  t.appendChild(head);
+  items.forEach((it) => {
+    const tr = document.createElement("tr");
+    [it.name, it.label, it.unit, it.version, (it.dimensions || []).join(", ")].forEach((v) => {
+      const td = document.createElement("td"); td.textContent = String(v); tr.appendChild(td);
+    });
+    t.appendChild(tr);
+  });
+  $("cattable").innerHTML = "";
+  $("cattable").appendChild(t);
+};
+</script>
+</body>
+</html>

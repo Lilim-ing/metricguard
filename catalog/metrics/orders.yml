@@ -1,0 +1,74 @@
+# 交易类指标：口径声明
+
+metrics:
+  - name: aov
+    label: 客单价
+    version: 1
+    owner: member-ops
+    unit: "元"
+    kind: ratio
+    description: 已支付GMV / 已支付订单数
+    numerator: "sum(paid_amount)"
+    denominator: "count(*)"
+    dimensions: [channel, member_level, city_tier, age_band]
+    pii_columns: []
+
+  - name: upt
+    label: 连带率
+    version: 1
+    owner: member-ops
+    unit: "件/单"
+    kind: ratio
+    description: 已支付件数 / 已支付订单数
+    numerator: "sum(qty)"
+    denominator: "count(distinct order_id)"
+    dimensions: [channel, category]
+    pii_columns: []
+
+  - name: return_rate
+    label: 退货率
+    version: 1
+    owner: member-ops
+    unit: "%"
+    kind: ratio
+    description: 退货件数 / 销售件数
+    numerator: "sum(qty where is_returned)"
+    denominator: "sum(qty)"
+    dimensions: [category]
+    pii_columns: []
+
+  - name: discount_rate
+    label: 折扣率
+    version: 1
+    owner: member-ops
+    unit: "%"
+    kind: ratio
+    description: 折扣金额 / 吊牌金额
+    numerator: "sum(discount_amount)"
+    denominator: "sum(gross_amount)"
+    dimensions: [channel, member_level]
+    pii_columns: []
+
+  - name: member_gmv
+    label: 会员GMV
+    version: 1
+    owner: member-ops
+    unit: "元"
+    kind: aggregate
+    description: 期内已支付GMV
+    numerator: "sum(paid_amount)"
+    denominator: null
+    dimensions: [channel, member_level]
+    pii_columns: []
+
+  - name: refund_amount_rate
+    label: 退款金额率
+    version: 1
+    owner: member-ops
+    unit: "%"
+    kind: ratio
+    description: 退款订单金额 / 全部订单金额
+    numerator: "sum(paid_amount where status=refunded)"
+    denominator: "sum(paid_amount)"
+    dimensions: [channel]
+    pii_columns: []
